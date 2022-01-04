@@ -32,8 +32,10 @@ function node(n)
 end
 
 function markTerminal(node)
---	print("Marking as terminal: " .. node.name)
+	print("markTerminal")
+	print("Marking as terminal: " .. node.name)
 	node.terminal = true
+	if node.parent == nil then return end
 	node.parent.terminalKids = node.parent.terminalKids + 1
 --	print("Parent has " .. node.parent.terminalKids .. " terminal kids out of " .. count(node.parent.children) .. " children total")
 	if node.parent.terminalKids == count(node.parent.children) then
@@ -46,7 +48,7 @@ function selection(node)
 	topScore = -999
 	
 	c = math.sqrt(2)
-	k = 0.5
+	k = node.value / 2
 	
 	for i, kid in pairs(node.children) do
 		if (kid.terminal) then
@@ -79,18 +81,12 @@ function MonteCarloTreeSearch(game, n, root)
 	for i=1,n,1 do
 		print("Iteration #" .. i)
 		curNode = root
+		if curNode.terminal then break end
 		curNode.visits = curNode.visits + 1
-		memorysavestate.loadcorestate(curNode.state)
+		-- memorysavestate.loadcorestate(curNode.state)
 		
 		while (curNode.state ~= nil) do
-		
-			if game.score() < BEST_SCORE then
-				game.endFlag = true
-				break
-			end
-		
---			print("in loop")
-			memorysavestate.loadcorestate(curNode.state)
+			-- memorysavestate.loadcorestate(curNode.state)
 			if (curNode.children == nil) then
 				game.expand(curNode)
 				-- skip analysis and designate this node as terminal if no children
@@ -118,8 +114,10 @@ function MonteCarloTreeSearch(game, n, root)
 		end
 		
 		result = game.score()
+		print(result)
 		if (result > BEST_SCORE) then
 			BEST_SCORE = result
+			print("New best score: " .. BEST_SCORE)
 		end
 --		print("Score: " .. result)
 		game.endFlag = false
@@ -155,6 +153,7 @@ function simulate(game, N, n)
 	for i=1,N,1 do
 		print("Starting move " .. i)
 		root = MonteCarloTreeSearch(game, n, root)
+		if (root == nil) then break end
 		memorysavestate.loadcorestate(root.state)
 		root.parent = nil
 		print("Selected move: " .. root.name .. " (score = " .. root.value .. ")" )
@@ -176,7 +175,10 @@ OnimushaTactics = {
 		-- player dead
 		if mainmemory.readbyte(0x2AE2) == 0 then return true end
 		-- all enemies dead
-		if mainmemory.readbyte(0x38A0) == 0x4B or mainmemory.readbyte(0x38A0) == 0x2F or mainmemory.readbyte(0x38A0) == 0x01 then return true end
+		if mainmemory.readbyte(0x38A0) == 0x4B or mainmemory.readbyte(0x38A0) == 0x2F or mainmemory.readbyte(0x38A0) == 0x01 then
+			--client.pause()
+			return true
+		end
 		
 		return false
 		
@@ -538,9 +540,10 @@ OnimushaTactics = {
 		UNIT_ADDR = 0x28DC
 		UNIT_SIZE = 0xEC
 		
-		if mainmemory.readbyte(0x38A0) == 0x01 then
+		if mainmemory.readbyte(0x38A0) == 0x4B then
 			return 30000 - emu.framecount()
 		else
+			print(mainmemory.readbyte(0x38A0))
 			return 0
 		end
 		
@@ -561,4 +564,4 @@ OnimushaTactics = {
 		gameMode = mainmemory.readbyte(0x38A0)
 
 print("Starting simulation")
-simulate(OnimushaTactics, 75, 75)
+simulate(OnimushaTactics, 100, 100)
