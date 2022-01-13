@@ -1,5 +1,11 @@
 BEST_SCORE = 0
 
+DEBUG = false
+
+function debugMsg(msg)
+	if (DEBUG) then debugMsg(msg) end
+end
+
 function waitFrames(n)
 	for i=1,n,1 do
 		emu.frameadvance()
@@ -7,7 +13,7 @@ function waitFrames(n)
 end
 
 function waitFramesBreak(n, game)
-	--print(bp)
+	--debugMsg(bp)
 	for i=1,n,1 do
 		emu.frameadvance()
 		if game.ended() then game.endFlag = true break end
@@ -32,27 +38,32 @@ function node(n)
 end
 
 function markTerminal(node)
-	print("markTerminal")
-	print("Marking as terminal: " .. node.name)
+	debugMsg("markTerminal")
+	debugMsg("Marking as terminal: " .. node.name)
 	node.terminal = true
-	if node.parent == nil then return end
+	if node.parent == nil then 
+		debugMsg("Root node detected: ending here")
+		return
+	end
 	node.parent.terminalKids = node.parent.terminalKids + 1
---	print("Parent has " .. node.parent.terminalKids .. " terminal kids out of " .. count(node.parent.children) .. " children total")
+	debugMsg("Parent has " .. node.parent.terminalKids .. " terminal kids out of " .. count(node.parent.children) .. " children total")
 	if node.parent.terminalKids == count(node.parent.children) then
 		markTerminal(node.parent)
 	end
 end
 
 function selection(node)
+	debugMsg("selection")
 	topChild = nil
 	topScore = -999
 	
 	c = math.sqrt(2)
 	k = node.value / 2
+	--k = 0
 	
 	for i, kid in pairs(node.children) do
 		if (kid.terminal) then
---			print("skipping terminal kid: " .. kid.name)
+			debugMsg("skipping terminal kid: " .. kid.name)
 		else
 			if (kid.visits > 0) then
 				score = kid.value + c * math.sqrt( ( 2 * math.log(node.visits) ) / (kid.visits) )
@@ -68,18 +79,21 @@ function selection(node)
 	end
 	
 	if topChild == nil then
-		print("selection ERROR: node has no children")
+		debugMsg("selection ERROR: node has no children")
 	end
 	
 	if topChild.visits == 0 then node.cn = node.cn + 1 end
 	
+	debugMsg("Selected action: " .. topChild.name)
 	return topChild
 end
 
 function MonteCarloTreeSearch(game, n, root)
 
+	root.name = "root"
+
 	for i=1,n,1 do
-		print("Iteration #" .. i)
+--		print("Iteration #" .. i)
 		curNode = root
 		if curNode.terminal then break end
 		curNode.visits = curNode.visits + 1
@@ -88,23 +102,30 @@ function MonteCarloTreeSearch(game, n, root)
 		while (curNode.state ~= nil) do
 			-- memorysavestate.loadcorestate(curNode.state)
 			if (curNode.children == nil) then
+				memorysavestate.loadcorestate(curNode.state)
 				game.expand(curNode)
 				-- skip analysis and designate this node as terminal if no children
 				if curNode.children == nil then
---					print("No children. skipping...")
+--					debugMsg("No children. skipping...")
 					game.endFlag = true
 					break
 				end
 			end
 			curNode = selection(curNode)
---			print("Selected action: " .. curNode.name)
+--			debugMsg("Selected action: " .. curNode.name)
 			curNode.visits = curNode.visits + 1
 		end
+		
+		
 		
 		if not game.endFlag then
 			memorysavestate.loadcorestate(curNode.parent.state)
 			game.perform(curNode.action)
 			curNode.state = memorysavestate.savecorestate()
+			if game.rawscore() < BEST_SCORE then
+--				print("skipping (too deep)")
+				game.endFlag = true
+			end
 		end
 		
 		if (game.endFlag) then
@@ -114,12 +135,13 @@ function MonteCarloTreeSearch(game, n, root)
 		end
 		
 		result = game.score()
-		print(result)
+		debugMsg(result)
 		if (result > BEST_SCORE) then
 			BEST_SCORE = result
 			print("New best score: " .. BEST_SCORE)
+			--client.pause()
 		end
---		print("Score: " .. result)
+--		debugMsg("Score: " .. result)
 		game.endFlag = false
 		
 		while (curNode ~= nil) do
@@ -152,12 +174,12 @@ function simulate(game, N, n)
 	root.state = memorysavestate.savecorestate()
 	for i=1,N,1 do
 		print("Starting move " .. i)
-		root = MonteCarloTreeSearch(game, n, root)
+		root = MonteCarloTreeSearch(game, n/math.pow(1.01,i), root)
 		if (root == nil) then break end
 		memorysavestate.loadcorestate(root.state)
 		root.parent = nil
 		print("Selected move: " .. root.name .. " (score = " .. root.value .. ")" )
-		client.pause()
+--		client.pause()
 	end
 end
 
@@ -173,10 +195,15 @@ OnimushaTactics = {
 	
 	ended = function()
 		-- player dead
-		if mainmemory.readbyte(0x2AE2) == 0 then return true end
+		if mainmemory.readbyte(0x2AE2) == 0 then
+			debugMsg("endFlag: player dead")
+--			client.pause()
+			return true
+		end
 		-- all enemies dead
 		if mainmemory.readbyte(0x38A0) == 0x4B or mainmemory.readbyte(0x38A0) == 0x2F or mainmemory.readbyte(0x38A0) == 0x01 then
-			--client.pause()
+			debugMsg("endFlag: stage won")
+--			client.pause()
 			return true
 		end
 		
@@ -212,9 +239,9 @@ OnimushaTactics = {
 		
 		gameMode = mainmemory.readbyte(0x38A0)
 
---		print(string.format("%x",gameMode))
+--		debugMsg(string.format("%x",gameMode))
 		if (gameMode == OnimushaTactics.SELECT_BATTLE_UNIT) then
---			print("  Current mode: Select Battle Unit")
+--			debugMsg("  Current mode: Select Battle Unit")
 			--Generate list of player units
 			--Determine which ones are alive and can act
 			--For each one, insert a selection act into acts
@@ -229,10 +256,10 @@ OnimushaTactics = {
 					and bit.band(unitFlags,1) == 0  -- if unit has not finished turn
 					and bit.band(unitStatus,1) == 1 -- if unit is alive
 					then
---					print("Unit ID: " .. unitID)
+--					debugMsg("Unit ID: " .. unitID)
 					unitXpos = mainmemory.readbyte(UnitXPosArr + i)
 					unitYpos = mainmemory.readbyte(UnitYPosArr + i)
---					print("Pos: " .. unitXpos .. ", " .. unitYpos)
+--					debugMsg("Pos: " .. unitXpos .. ", " .. unitYpos)
 					table.insert(acts, { id = "Select Unit @ " .. unitXpos .. ", " .. unitYpos, name = "Select Unit", x = unitXpos, y = unitYpos } ) 
 				end
 			end
@@ -242,20 +269,20 @@ OnimushaTactics = {
 		
 			--unitNum = mainmemory.readbyte(0x379C)
 			unitNum = 2
---			print(unitNum)
+--			debugMsg(unitNum)
 			curUnit = UNIT_ADDR + unitNum*UNIT_SIZE
 			unitFlags = mainmemory.readbyte(curUnit+0xB8)
 			
---			print("  Current mode: Unit Menu")
---			print("Unit flags: " .. unitFlags)
-			if (bit.band(unitFlags,4) == 0) then
+--			debugMsg("  Current mode: Unit Menu")
+--			debugMsg("Unit flags: " .. unitFlags)
+			if (bit.band(unitFlags,4) == 0 and bit.band(unitFlags,2) == 0) then
 				table.insert(acts, { id = "Select Move", name = "Select Move" } )
 			end
 			if (bit.band(unitFlags,2) == 0) then
 				table.insert(acts, { id = "Select Attack", name = "Select Attack" } )
 			end
 			
-			if (unitFlags ~= 0) then
+			if (bit.band(unitFlags,2) ~= 0) then
 				table.insert(acts, { id = "Done", name = "Done"} )
 			end
 		elseif (gameMode == OnimushaTactics.SELECT_MOVE) then
@@ -266,25 +293,25 @@ OnimushaTactics = {
 			unitFlags = mainmemory.readbyte(curUnit+0xB8)
 			unitX = mainmemory.readbyte(UnitXPosArr + unitNum)
 			unitY = mainmemory.readbyte(UnitYPosArr + unitNum)
---			print(unitX .. "," .. unitY)
---			print("  Current mode: Select Move")
+--			debugMsg(unitX .. "," .. unitY)
+--			debugMsg("  Current mode: Select Move")
 			-- scan all tiles to see which are highlighted
 			-- insert act for each move
 			
 			for yPos=0,15,1 do
 				baseRow = 0x249C + 4*yPos
 				for xPos=0,15,1 do
---					print("Checking " .. xPos .. ", " .. yPos)
+--					debugMsg("Checking " .. xPos .. ", " .. yPos)
 					exactRow = baseRow + math.floor(xPos/8)
---					print("exactRow: " .. string.format("%x", exactRow))
+--					debugMsg("exactRow: " .. string.format("%x", exactRow))
 					baseVal = mainmemory.readbyte(exactRow)
---					print("baseVal: " .. string.format("%x", baseVal))
+--					debugMsg("baseVal: " .. string.format("%x", baseVal))
 					digit = math.pow(2,xPos%8)
---					print("Digit: " .. digit)
+--					debugMsg("Digit: " .. digit)
 					if (xPos == unitX and yPos == unitY) then
---						print("lol")
+--						debugMsg("lol")
 					elseif bit.band(baseVal,digit) ~= 0 then
---						print("Possible move detected: " .. xPos .. ", " .. yPos)
+--						debugMsg("Possible move detected: " .. xPos .. ", " .. yPos)
 						table.insert(acts, { id = "Move to " .. xPos .. ", " .. yPos, name = "Move", x = xPos, y  = yPos } )
 					end
 				end
@@ -296,36 +323,36 @@ OnimushaTactics = {
 			curUnit = UNIT_ADDR + unitNum*UNIT_SIZE
 			unitFlags = mainmemory.readbyte(curUnit+0xB8)		
 		
---			print("Current mode: Select Attack")
+--			debugMsg("Current mode: Select Attack")
 			-- scan all tiles to see which are highlighted and contain an attackable enemy unit
 			-- insert act for each attack
 			
 			for yPos=0,15,1 do
 				baseRow = 0x249C + 4*yPos
---				print("baseRow: " .. string.format("%x", baseRow))
+--				debugMsg("baseRow: " .. string.format("%x", baseRow))
 				for xPos=0,15,1 do
---					print("Checking " .. xPos .. ", " .. yPos)
+--					debugMsg("Checking " .. xPos .. ", " .. yPos)
 					exactRow = baseRow + math.floor(xPos/8)
---					print("exactRow: " .. string.format("%x", exactRow))
+--					debugMsg("exactRow: " .. string.format("%x", exactRow))
 					baseVal = mainmemory.readbyte(exactRow)
---					print("baseVal: " .. string.format("%x", baseVal))
+--					debugMsg("baseVal: " .. string.format("%x", baseVal))
 					digit = math.pow(2,xPos%8)
---					print("Digit: " .. digit)
+--					debugMsg("Digit: " .. digit)
 					if bit.band(baseVal,digit) ~= 0 then
 						for i=0,15,1 do
---							print(string.format("%x",UnitXPosArr))
---							print(string.format("%x",UnitYPosArr))
+--							debugMsg(string.format("%x",UnitXPosArr))
+--							debugMsg(string.format("%x",UnitYPosArr))
 							if xPos == mainmemory.readbyte(UnitXPosArr + i) and yPos == mainmemory.readbyte(UnitYPosArr + i) then
 								uaddr = UNIT_ADDR + i * UNIT_SIZE
 								uid = mainmemory.readbyte(uaddr)
 								ustat = mainmemory.readbyte(uaddr + 0x4A)
 								
---								print("data")
---								print(uid)
---								print(ustat)
+--								debugMsg("data")
+--								debugMsg(uid)
+--								debugMsg(ustat)
 								
 								if uid > 0x17 and bit.band(ustat,2) ~= 0 then						
---									print("Possible attack detected: " .. xPos .. ", " .. yPos)
+--									debugMsg("Possible attack detected: " .. xPos .. ", " .. yPos)
 									table.insert(acts, { id = "Attack " .. xPos .. ", " .. yPos, name = "Attack", x = xPos, y  = yPos } )
 								end
 							end
@@ -344,7 +371,7 @@ OnimushaTactics = {
 	end,
 	
 	expand = function(p)
---		print("  expand")
+--		debugMsg("  expand")
 		acts = OnimushaTactics:getActs()
 
 		kids = {}
@@ -364,8 +391,8 @@ OnimushaTactics = {
 			act = act2
 		end
 		
---		print("  perform")
---		print(act)
+--		debugMsg("  perform")
+--		debugMsg(act)
 		
 		SpriteDataPtr = mainmemory.read_s16_le(0x2538)
 		DataPtr2 = mainmemory.read_s16_le(SpriteDataPtr + 0xC)
@@ -375,7 +402,7 @@ OnimushaTactics = {
 		gameMode = mainmemory.readbyte(0x38A0)
 	
 		if act.name == "End Phase" then
---			print("End Phase")
+--			debugMsg("End Phase")
 			joypad.set({Start = true})
 			
 			while (mainmemory.readbyte(0x38A0) ~= 0x34) do
@@ -392,26 +419,26 @@ OnimushaTactics = {
 	
 			
 			while (mainmemory.readbyte(0x38A0) ~= 0x50 and not OnimushaTactics.endFlag) do
-				--print("wait for 0x50")
+				--debugMsg("wait for 0x50")
 				endFlag = waitFrameBreak(OnimushaTactics)
 				if (endFlag) then
-					print("endFlag 1")
+					debugMsg("endFlag 1")
 					return
 				end
 			end
 			while (mainmemory.readbyte(0x38A0) ~= 0x19 and not OnimushaTactics.endFlag) do
-				--print("wait for 0x19")
+				--debugMsg("wait for 0x19")
 				endFlag = waitFrameBreak(OnimushaTactics)
 				if (endFlag) then
---					print("endFlag 2")
+--					debugMsg("endFlag 2")
 					return
 				end
 			end
 		elseif act.name == "Select Unit" or act.name == "Move" or act.name == "Attack" then
 			targetX = act.x
 			targetY = act.y
---			print(targetX .. "," .. targetY)
---			print(CursorX .. "," .. CursorY)
+--			debugMsg(targetX .. "," .. targetY)
+--			debugMsg(CursorX .. "," .. CursorY)
 			while (CursorX < targetX) do
 				joypad.set({Left = true})
 				emu.frameadvance()
@@ -497,29 +524,29 @@ OnimushaTactics = {
 			--If there are no more units to act, proceed to next turn
 			else		
 				while (mainmemory.readbyte(0x38A0) ~= 0x50 and not OnimushaTactics.endFlag) do
-					--print("wait for 0x50")
+					--debugMsg("wait for 0x50")
 					endFlag = waitFrameBreak(OnimushaTactics)
 					if (endFlag) then
---						print("endFlag 1")
+--						debugMsg("endFlag 1")
 						return
 					end
 				end
 				while (mainmemory.readbyte(0x38A0) ~= 0x19 and not OnimushaTactics.endFlag) do
-					--print("wait for 0x19")
+					--debugMsg("wait for 0x19")
 					endFlag = waitFrameBreak(OnimushaTactics)
 					if (endFlag) then
---						print("endFlag 2")
+--						debugMsg("endFlag 2")
 						return
 					end
 				end
 			end
 		else
-			print("Perform ERROR: \"" .. act.name .. "\" not known")
+			debugMsg("Perform ERROR: \"" .. act.name .. "\" not known")
 		end
 	end,
 	
 	rollout = function()
---		print("rollout")
+		debugMsg("rollout")
 		--Rollout logic:
 		---Arbitrary action until end
 		endFlag = false
@@ -531,9 +558,13 @@ OnimushaTactics = {
 				return
 			end
 			a = acts[math.random(#acts)]
---			print(a.id)
+			debugMsg("Performing random act: " .. a.id)
 			OnimushaTactics:perform(a)
 		end
+	end,
+	
+	rawscore = function()
+		return 30000 - emu.framecount()
 	end,
 	
 	score = function()
@@ -543,25 +574,12 @@ OnimushaTactics = {
 		if mainmemory.readbyte(0x38A0) == 0x4B then
 			return 30000 - emu.framecount()
 		else
-			print(mainmemory.readbyte(0x38A0))
+			debugMsg(mainmemory.readbyte(0x38A0))
 			return 0
 		end
 		
 	end
 }
 
-		SystemDataPtr = mainmemory.read_s16_le(0x2538)
-		GameDataPtr = mainmemory.read_s16_le(SystemDataPtr + 0xC)
-		CursorX = mainmemory.readbyte(GameDataPtr + 0x62E)
-		CursorY = mainmemory.readbyte(GameDataPtr + 0x630)
-
-		UnitXPosArr = GameDataPtr + 0xA8C
-		UnitYPosArr = GameDataPtr + 0xA9C
-
-		UNIT_ADDR = 0x28DC
-		UNIT_SIZE = 0xEC
-		
-		gameMode = mainmemory.readbyte(0x38A0)
-
-print("Starting simulation")
-simulate(OnimushaTactics, 100, 100)
+debugMsg("Starting simulation")
+simulate(OnimushaTactics, 2500, 2500)
