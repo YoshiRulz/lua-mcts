@@ -42,6 +42,9 @@
 		<Reference Include="BizHawk.Common"
 			HintPath="$(BIZHAWK_HOME)dll/BizHawk.Common.dll"
 			Private="true" />
+		<Reference Include="BizHawk.Emulation.Common"
+			HintPath="$(BIZHAWK_HOME)dll/BizHawk.Emulation.Common.dll"
+			Private="true" />
 		<Reference Include="BizHawk.WinForms.Controls"
 			HintPath="$(BIZHAWK_HOME)dll/BizHawk.WinForms.Controls.dll"
 			Private="true" />
